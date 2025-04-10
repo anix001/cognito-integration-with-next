@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Amplify } from "aws-amplify";
+// import { Amplify } from "aws-amplify";
 // import { signUp } from "aws-amplify/auth";
-import { amplifyConfig } from "@/app/lib/amplify.config";
+// import { amplifyConfig } from "@/app/lib/amplify.config";
 import AWS from "aws-sdk";
 
-// Configure Amplify on the server side
-Amplify.configure(amplifyConfig, { ssr: true });
+// // Configure Amplify on the server side
+// Amplify.configure(amplifyConfig, { ssr: true });
 
 // Setup AWS Cognito Identity Provider client
 const cognito = new AWS.CognitoIdentityServiceProvider({
@@ -14,54 +14,6 @@ const cognito = new AWS.CognitoIdentityServiceProvider({
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   sessionToken: process.env.AWS_SESSION_TOKEN!,
 });
-
-// // Setup AWS SES client
-const ses = new AWS.SES({
-  region: process.env.AWS_REGION, // e.g., 'us-east-1'
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  sessionToken: process.env.AWS_SESSION_TOKEN!,
-});
-
-
-async function sendInvitationEmail(email: string, password: string) {
-  console.log("🚀 ~ sendInvitationEmail ~ email:", email);
-  const params = {
-    Source: "bsainju@pmsquare.com", // The email address that will send the email (must be verified in SES)
-    Destination: {
-      ToAddresses: [email], // Recipient's email
-    },
-    Message: {
-      Subject: {
-        Data: "Your Account Invitation",
-        Charset: "UTF-8",
-      },
-      Body: {
-        Text: {
-          Data: `Hello,
-
-          You have been invited to join our service. Below are your login details:
-
-          Email: ${email}
-          Password: ${password}
-
-          Please use these credentials to log in to your account.
-
-          Best regards,
-          Your Company Name`,
-          Charset: "UTF-8",
-        },
-      },
-    },
-  };
-
-  try {
-    await ses.sendEmail(params).promise();
-    console.log("Invitation email sent successfully");
-  } catch (error) {
-    console.error("Error sending invitation email:", error);
-  }
-}
 
 
 export async function POST(request: NextRequest) {
@@ -84,8 +36,6 @@ export async function POST(request: NextRequest) {
     //   options: {
     //     userAttributes: {
     //       email, // Set email as an attribute as well
-    //       "custom:password": password,
-    //       "custom:username": username,
     //       "custom:role": role,
     //     },
     //   },
@@ -98,63 +48,8 @@ export async function POST(request: NextRequest) {
     //   nextStep: signUpResponse.nextStep,
     // });
 
-        // Create the user
-      //   const userCreationResponse = await cognito
-      //   .adminCreateUser({
-      //     UserPoolId: process.env.AWS_USER_POOL_ID!,
-      //     Username: email, 
-      //     UserAttributes: [
-      //       { Name: "email", Value: email },
-      //       { Name: "custom:role", Value: role },
-      //       // { Name: "custom:password", Value: password },
-      //       { Name: "email_verified", Value: "true" },
-      //     ],
-      //     MessageAction: "SUPPRESS", // Prevent sending the confirmation message
-      //     // TemporaryPassword: password,
-      //   })
-      //   .promise();
-        
-      //   // setting password as permanent
-      //   await cognito
-      //   .adminSetUserPassword({
-      //     UserPoolId: process.env.AWS_USER_POOL_ID!,
-      //     Username: email,
-      //     Password: password, // Set the permanent password
-      //     Permanent: true, // Mark the password as permanent, no need for reset
-      //   })
-      //   .promise();
-
-      //  // Confirm the user
-      // await cognito
-      // .adminConfirmSignUp({
-      //   UserPoolId: process.env.AWS_USER_POOL_ID!,
-      //   Username: email,
-      // })
-      // .promise();
-
-      //  // Send invitation email
-      // await sendInvitationEmail(email, password);
-
-      // console.log("🚀 ~ POST ~ userCreationResponse:", userCreationResponse)
-        
-      // // Check if the user is in 'FORCE_CHANGE_PASSWORD' state
-      // if (userCreationResponse.User?.UserStatus === "FORCE_CHANGE_PASSWORD") {
-      //   return NextResponse.json({
-      //     success: true,
-      //     message: "User successfully created and confirmed",
-      //     email,
-      //   });
-      // }
-  
-  
-      // return NextResponse.json({
-      //   success: true,
-      //   message: "User successfully created and confirmed",
-      //   email,
-      // });
-
       // Create the user
-    const userCreationResponse = await cognito
+    await cognito
     .adminCreateUser({
       UserPoolId: process.env.AWS_USER_POOL_ID!,
       Username: email,
@@ -163,19 +58,19 @@ export async function POST(request: NextRequest) {
         { Name: "custom:role", Value: role },
         { Name: "email_verified", Value: "true" },
       ],
-      MessageAction: "SUPPRESS", // Prevent sending the confirmation message
+      TemporaryPassword: password
     })
     .promise();
 
-  // setting password as permanent
-  await cognito
-    .adminSetUserPassword({
-      UserPoolId: process.env.AWS_USER_POOL_ID!,
-      Username: email,
-      Password: password, // Set the permanent password
-      Permanent: true, // Mark the password as permanent, no need for reset
-    })
-    .promise();
+  // // setting password as permanent
+  // await cognito
+  //   .adminSetUserPassword({
+  //     UserPoolId: process.env.AWS_USER_POOL_ID!,
+  //     Username: email,
+  //     Password: password, // Set the permanent password
+  //     Permanent: true, // Mark the password as permanent, no need for reset
+  //   })
+  //   .promise();
 
   // Check the user's current status
   const userStatusResponse = await cognito
@@ -190,8 +85,10 @@ export async function POST(request: NextRequest) {
   // If the user is already confirmed, skip the confirmation step
   if (currentStatus === "CONFIRMED") {
     console.log("User is already confirmed, skipping confirmation.");
+  } else if (currentStatus === "FORCE_CHANGE_PASSWORD") {
+    console.log("User is in FORCE_CHANGE_PASSWORD state, skipping confirmation.");
   } else {
-    // Confirm the user if not already confirmed
+    // Try to confirm user only if it's in a confirmable state
     await cognito
       .adminConfirmSignUp({
         UserPoolId: process.env.AWS_USER_POOL_ID!,
@@ -199,11 +96,9 @@ export async function POST(request: NextRequest) {
       })
       .promise();
   }
+  
 
-  // Send invitation email
-  await sendInvitationEmail(email, password);
-
-  console.log("🚀 ~ POST ~ userCreationResponse:", userCreationResponse);
+  // console.log("🚀 ~ POST ~ userCreationResponse:", userCreationResponse);
 
   // Return success message
   return NextResponse.json({
